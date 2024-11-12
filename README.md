@@ -1,18 +1,55 @@
-To build this solution I used google collab, I will be sepearting the code in the blocks I executed in google collab.
-To aid in the assitance of building this system I used claude AI and chatGpt as well as looking at various websites and adapting the code through trial and error for the natural language processing.
+Overview
+The system performs the following key functions:
+Converts PDF documents to JPG format for OCR processing
+Extracts text from images using Tesseract OCR
+Processes extracted text to identify document type and relevant information
+Outputs structured data in JSON format
 
-Step 1:
-Run 1st block, installing necessary libaries.
+Prerequisites
+Google account with access to Google Colab
+PDF documents which were given for this excerise and nother other formatted pdfs
 
-Step 2:
-Run the 2nd block, click choose files, then select the all the pdf's, this is so the files can be saved directly into google collab, however
-it does mean this process has to be done manually once the program is reset.
+Development Notes
+This solution was developed using:
+Google Colab as the primary development environment
+Claude AI and ChatGPT for development assistance
+Various online resources for natural language processing implementations
+Iterative testing and refinement through trial and error
 
-Step 3:
-Run the 3rd block, convert all the pdfs into jpgs (as this is the format they are needed in for my program)
+Important Assumptions
+The system assumes:
+Documents follow consistent formatting patterns
+Key information is presented with consistent delimiters
+Text extraction patterns match the document structure
+PDFs are readable and of sufficient quality for OCR
 
-Step 4:
-Run the 4th block, this will take some time to complete, but will try and output the required information from the images which were given.
+Installation and Usage
+Step 1: Environment Setup
+Run the first code block to install required libraries
 
+Step 2: Document Upload
+Run the second code block
+Click "Choose Files" when prompted
+Select all PDF documents for processing
+Wait for upload completion
+Note: This step must be repeated if the Colab environment is reset
 
+Step 3: PDF to JPG Conversion
+Run the third code block to:
+- Process all uploaded PDFs
+- Convert each page to JPG format
+- Save converted images in the Colab environment
+  
+Step 4: Information Extraction
+Run the fourth code block to:
+- Process all JPG images
+- Extract relevant information
+- Generate output in JSON format
+Note: This step may take several minutes depending on the number and size of documents but once done will create a file with all the output information
+Extra note: You will only see output once finished
 
+Limitations
+Manual file upload required after environment resets
+Processing speed dependent on Colab resource allocation
+OCR accuracy dependent on document quality
+Pattern matching based on predefined formats
