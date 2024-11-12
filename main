@@ -1,80 +1,104 @@
-#Block 1
-pip installs
+# Block 1: Required Package Installation
+# Install necessary Python packages and system dependencies for document processing
+
+# Install Google Translate library (specific version for compatibility)
 !pip install googletrans==4.0.0-rc1
+
+# Install Tesseract OCR and its Python wrapper
 !pip install pytesseract
-!sudo apt install tesseract-ocr
-!pip install pytesseract
-!pip install pdf2image Pillow
+!sudo apt install tesseract-ocr  # Install Tesseract OCR engine
+!pip install pytesseract         # Reinstall to ensure proper linking
+
+# Install PDF processing and image manipulation libraries
+!pip install pdf2image Pillow    # For PDF to image conversion and image processing
+
+# Install Google Cloud Vision API for advanced OCR capabilities
 !pip install --upgrade google-cloud-vision
+
+# Install Poppler utilities (required by pdf2image for PDF processing)
 !apt-get install -y poppler-utils
+
+# Install language detection library
 !pip install langdetect
 
-#Block 2
+# Block 2: File Upload Handler
+# Enable file upload functionality in Google Colab
 from google.colab import files
-uploaded = files.upload()
+uploaded = files.upload()  # Opens file picker and returns uploaded file details
 
-
-#Block3
+# Block 3: PDF to Image Conversion
 from pdf2image import convert_from_path
 from google.colab import files
 
-# List of PDF files you want to process
-pdf_files = ['24000001.pdf', '24000002.pdf', '24000003.pdf', '24000004.pdf', 
-             '24000005.pdf', '24000006.pdf', '24000007.pdf', '24000008.pdf',
-             '24000009.pdf', '24000010.pdf']
+# Define list of PDF files to process
+pdf_files = [
+    '24000001.pdf', '24000002.pdf', '24000003.pdf', '24000004.pdf', 
+    '24000005.pdf', '24000006.pdf', '24000007.pdf', '24000008.pdf',
+    '24000009.pdf', '24000010.pdf'
+]
 
-# Initialize a list to store image paths for all PDFs
+# Initialize list to store paths of all generated images
 all_image_paths = []
 
-# Loop through each PDF and convert pages to images
+# Process each PDF file
 for pdf_path in pdf_files:
-    # Convert the PDF to images (you can adjust the DPI if necessary)
-    pages = convert_from_path(pdf_path, 300)  # 300 DPI is good for OCR quality
-
-    # Save each page as an image
+    # Convert PDF to images with 300 DPI resolution
+    # Higher DPI provides better quality for OCR but increases processing time
+    pages = convert_from_path(pdf_path, 300)
+    
+    # Process and save each page of the PDF
     image_paths = []
     for page_number, page in enumerate(pages):
-        image_path = f'{pdf_path}_page_{page_number + 1}.jpg'  # Unique name for each page
+        # Generate unique filename for each page
+        image_path = f'{pdf_path}_page_{page_number + 1}.jpg'
+        
+        # Save page as JPEG image
         page.save(image_path, 'JPEG')
+        
+        # Store path for later processing
         image_paths.append(image_path)
     
-    # Add the paths of images for this PDF to the overall list
+    # Add paths from current PDF to master list
     all_image_paths.extend(image_paths)
 
-# Output paths of all saved images
-all_image_paths
+# Return list of all generated image paths
+all_image_paths  # Will be used in subsequent processing steps
 
-#Block 4
-import pytesseract
-from PIL import Image
-from googletrans import Translator
-from langdetect import detect
-import spacy
-import re
-import json
-import logging
-from typing import Dict, Tuple, Optional, List
-from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
+# Block 4: Document Processing Setup and Core Classes
 
-# Configure logging
+# Import required libraries
+import pytesseract        # For OCR (optical character recognition)
+from PIL import Image     # For image handling
+from googletrans import Translator  # For language translation
+from langdetect import detect      # For language detection
+import spacy             # For NLP tasks and named entity recognition
+import re                # For regular expression operations
+import json              # For JSON data handling
+import logging           # For application logging
+from typing import Dict, Tuple, Optional, List  # For type hints
+from dataclasses import dataclass   # For creating data classes
+from datetime import datetime       # For timestamp generation
+from pathlib import Path           # For file path handling
+
+# Configure logging system for tracking execution and debugging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
+# Define data structure for storing extracted document information
 @dataclass
 class DocumentInfo:
-    image_path: str
-    company_name: Optional[str]
-    company_identifier: Optional[str]
-    document_purpose: str
-    purpose_details: Dict
+    image_path: str              # Path to the processed image
+    company_name: Optional[str]  # Extracted company name (if found)
+    company_identifier: Optional[str]  # Company registration number or identifier
+    document_purpose: str        # Main purpose of the document
+    purpose_details: Dict        # Additional details about the document purpose
 
+# Main class for handling document information extraction
 class DocumentExtractor:
-    # Regular expression patterns
+    # Define regex patterns for extracting specific information
     PATTERNS = {
         'company_id': r'(?i)(?:company\s+identifier|registration\s+number|company\s+number)\s*:?\s*([\d\s-]+)',
         'position': r'(?i)position\s*:?\s*([\w\s,.-]+?)(?:\.|$|\n)',
@@ -85,6 +109,7 @@ class DocumentExtractor:
         'birth_date': r'(?i)(?:date\s+of\s+birth|birth\s+date)\s*:?\s*([\d\s\w,.-]+?)(?:\.|$|\n)'
     }
 
+    # Define keywords for identifying document purposes
     PURPOSE_KEYWORDS = {
         'appointment': ['appointment', 'new director', 'appointment of director'],
         'resignation': ['resignation', 'cessation', 'stepping down'],
@@ -94,49 +119,54 @@ class DocumentExtractor:
     }
 
     def __init__(self):
-        """Initialize the document extractor with necessary models and tools."""
+        """Initialize document processor with required models and tools"""
         try:
+            # Load English language model for NLP tasks
             self.nlp = spacy.load('en_core_web_sm')
         except OSError:
             logger.error("Failed to load spaCy model. Please install it using: python -m spacy download en_core_web_sm")
             raise
-
+        
+        # Initialize translator for handling non-English documents
         self.translator = Translator()
 
     def extract_using_pattern(self, text: str, pattern: str) -> Optional[str]:
-        """Extract information using a regex pattern."""
+        """Extract text matching a specific regex pattern"""
         match = re.search(pattern, text)
         return match.group(1).strip() if match else None
 
     def extract_company_name(self, text: str) -> Optional[str]:
-        """Extract company name using spaCy and additional rules."""
+        """Extract company name using NLP and pattern matching"""
         doc = self.nlp(text)
         
-        # First try to find organization entities
+        # Find all organization entities in the text
         org_entities = [ent.text for ent in doc.ents if ent.label_ == "ORG"]
         
         if org_entities:
-            # Prioritize organizations that appear after "Company Name:" or similar patterns
+            # Look for explicit company name declarations
             company_pattern = r'(?i)company\s+name\s*:\s*([\w\s]+)(?:\.|$|\n)'
             explicit_company = self.extract_using_pattern(text, company_pattern)
             
+            # Return explicit company name if found and valid
             if explicit_company and explicit_company in org_entities:
                 return explicit_company
             
-            return org_entities[0]  # Return the first organization found
+            # Fall back to first organization found
+            return org_entities[0]
         
         return None
 
     def identify_document_purpose(self, text: str) -> Tuple[str, Dict]:
-        """Identify document purpose and extract relevant details."""
+        """Determine document type and extract relevant details"""
         text_lower = text.lower()
         purpose_details = {}
         identified_purposes = []
 
-        # Check for each purpose type
+        # Check text against known document types
         for purpose_type, keywords in self.PURPOSE_KEYWORDS.items():
             if any(keyword in text_lower for keyword in keywords):
                 identified_purposes.append(purpose_type)
+                # Extract additional details based on document type
                 purpose_details.update(self._extract_purpose_specific_details(text, purpose_type))
 
         return (
@@ -145,88 +175,135 @@ class DocumentExtractor:
         )
 
     def _extract_purpose_specific_details(self, text: str, purpose_type: str) -> Dict:
-        """Extract details specific to the document purpose."""
-        details = {'Type': purpose_type.capitalize()}
+    """Extract details specific to the document purpose.
+    
+    This method processes text differently based on document type (appointment/resignation)
+    and extracts relevant information using predefined regex patterns.
+    
+    Args:
+        text (str): The OCR-extracted text from the document
+        purpose_type (str): The type of document ('appointment' or 'resignation')
+        
+    Returns:
+        Dict: Dictionary containing extracted details specific to the document type
+    """
+    # Initialize details dictionary with capitalized document type
+    details = {'Type': purpose_type.capitalize()}
 
-        if purpose_type == 'appointment':
-            director_name = self.extract_using_pattern(text, self.PATTERNS['director_name'])
-            position = self.extract_using_pattern(text, self.PATTERNS['position'])
-            effective_date = self.extract_using_pattern(text, self.PATTERNS['effective_date'])
-            nationality = self.extract_using_pattern(text, self.PATTERNS['nationality'])
-            address = self.extract_using_pattern(text, self.PATTERNS['address'])
+    if purpose_type == 'appointment':
+        # For appointment documents, extract comprehensive director information
+        # including personal details and role information
+        director_name = self.extract_using_pattern(text, self.PATTERNS['director_name'])
+        position = self.extract_using_pattern(text, self.PATTERNS['position'])
+        effective_date = self.extract_using_pattern(text, self.PATTERNS['effective_date'])
+        nationality = self.extract_using_pattern(text, self.PATTERNS['nationality'])
+        address = self.extract_using_pattern(text, self.PATTERNS['address'])
 
-            if director_name:
-                details['Director Name'] = director_name
-            if position:
-                details['Position'] = position
-            if effective_date:
-                details['Effective Date'] = effective_date
-            if nationality:
-                details['Nationality'] = nationality
-            if address:
-                details['Address'] = address
+        # Only add non-None values to avoid empty fields
+        if director_name:
+            details['Director Name'] = director_name
+        if position:
+            details['Position'] = position
+        if effective_date:
+            details['Effective Date'] = effective_date
+        if nationality:
+            details['Nationality'] = nationality
+        if address:
+            details['Address'] = address
 
-        elif purpose_type == 'resignation':
-            director_name = self.extract_using_pattern(text, self.PATTERNS['director_name'])
-            effective_date = self.extract_using_pattern(text, self.PATTERNS['effective_date'])
-            
-            if director_name:
-                details['Director Name'] = director_name
-            if effective_date:
-                details['Effective Date'] = effective_date
+    elif purpose_type == 'resignation':
+        # For resignation documents, we only need minimal information:
+        # who is resigning and when it takes effect
+        director_name = self.extract_using_pattern(text, self.PATTERNS['director_name'])
+        effective_date = self.extract_using_pattern(text, self.PATTERNS['effective_date'])
+        
+        if director_name:
+            details['Director Name'] = director_name
+        if effective_date:
+            details['Effective Date'] = effective_date
 
-        return details
+    return details
 
-    def process_document(self, image_path: str) -> DocumentInfo:
-        """Process a single document and extract information."""
+def process_document(self, image_path: str) -> DocumentInfo:
+    """Process a single document and extract information.
+    
+    This method handles the complete document processing pipeline:
+    1. Image loading and OCR
+    2. Language detection and translation if needed
+    3. Information extraction
+    4. Error handling and reporting
+    
+    Args:
+        image_path (str): Path to the image file to process
+        
+    Returns:
+        DocumentInfo: Object containing all extracted information or error details
+    """
+    try:
+        # Step 1: Load the image and perform OCR
+        # Using PIL for image handling and pytesseract for text extraction
+        image = Image.open(image_path)
+        text = pytesseract.image_to_string(image)
+
+        # Step 2: Language detection and translation
+        # Attempt to detect non-English text and translate if necessary
         try:
-            # Open and process image
-            image = Image.open(image_path)
-            text = pytesseract.image_to_string(image)
-
-            # Detect and translate if necessary
-            try:
-                detected_language = detect(text)
-                if detected_language != 'en':
-                    text = self.translator.translate(text, src=detected_language, dest='en').text
-            except Exception as e:
-                logger.warning(f"Language detection/translation failed: {e}")
-
-            # Extract information
-            company_name = self.extract_company_name(text)
-            company_identifier = self.extract_using_pattern(text, self.PATTERNS['company_id'])
-            document_purpose, purpose_details = self.identify_document_purpose(text)
-
-            return DocumentInfo(
-                image_path=image_path,
-                company_name=company_name,
-                company_identifier=company_identifier,
-                document_purpose=document_purpose,
-                purpose_details=purpose_details
-            )
-
+            detected_language = detect(text)
+            if detected_language != 'en':
+                # Translate non-English text to English for consistent processing
+                text = self.translator.translate(text, src=detected_language, dest='en').text
         except Exception as e:
-            logger.error(f"Error processing document {image_path}: {e}")
-            return DocumentInfo(
-                image_path=image_path,
-                company_name=None,
-                company_identifier=None,
-                document_purpose="Error processing document",
-                purpose_details={"error": str(e)}
-            )
+            # Log warning but continue processing if language detection/translation fails
+            logger.warning(f"Language detection/translation failed: {e}")
+
+        # Step 3: Extract all relevant information from the processed text
+        company_name = self.extract_company_name(text)
+        company_identifier = self.extract_using_pattern(text, self.PATTERNS['company_id'])
+        document_purpose, purpose_details = self.identify_document_purpose(text)
+
+        # Return structured information in DocumentInfo object
+        return DocumentInfo(
+            image_path=image_path,
+            company_name=company_name,
+            company_identifier=company_identifier,
+            document_purpose=document_purpose,
+            purpose_details=purpose_details
+        )
+
+    except Exception as e:
+        # Handle any processing errors by returning DocumentInfo with error details
+        logger.error(f"Error processing document {image_path}: {e}")
+        return DocumentInfo(
+            image_path=image_path,
+            company_name=None,
+            company_identifier=None,
+            document_purpose="Error processing document",
+            purpose_details={"error": str(e)}
+        )
 
 def main():
-    # Create output directory for results
+    """Main execution function for batch document processing.
+    
+    This function:
+    1. Sets up the output directory
+    2. Initializes the document extractor
+    3. Processes multiple documents in batch
+    4. Saves results to a timestamped JSON file
+    """
+    # Create output directory if it doesn't exist
     output_dir = Path("extracted_results")
     output_dir.mkdir(exist_ok=True)
     
-    # Initialize extractor
+    # Initialize our document extraction system
     extractor = DocumentExtractor()
     
-    # Process all images
+    # Track all processing results
     all_results = []
+    # Generate timestamp for unique output file naming
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    # List of all document images to process
+    # Note: These appear to be PDF pages converted to images
     image_paths = [
         '24000001.pdf_page_1.jpg',
         '24000002.pdf_page_1.jpg',
@@ -244,12 +321,13 @@ def main():
         '24000010.pdf_page_1.jpg'
     ]
 
+    # Process each document and collect results
     for image_path in image_paths:
         logger.info(f"Processing {image_path}...")
         result = extractor.process_document(image_path)
         all_results.append(result.__dict__)
 
-    # Save results to JSON file
+    # Save all processing results to a JSON file
     output_file = output_dir / f"extracted_info_{timestamp}.json"
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(all_results, f, ensure_ascii=False, indent=4)
