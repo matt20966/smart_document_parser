@@ -1,19 +1,20 @@
-#pip installs
-#!pip install googletrans==4.0.0-rc1
-#!pip install pytesseract
-#!sudo apt install tesseract-ocr
-#!pip install pytesseract
-#!pip install pdf2image Pillow
-#!pip install --upgrade google-cloud-vision
-#!apt-get install -y poppler-utils
-#!pip install langdetect
+#Block 1
+pip installs
+!pip install googletrans==4.0.0-rc1
+!pip install pytesseract
+!sudo apt install tesseract-ocr
+!pip install pytesseract
+!pip install pdf2image Pillow
+!pip install --upgrade google-cloud-vision
+!apt-get install -y poppler-utils
+!pip install langdetect
 
-
+#Block 2
 from google.colab import files
 uploaded = files.upload()
 
 
-
+#Block3
 from pdf2image import convert_from_path
 from google.colab import files
 
@@ -43,89 +44,217 @@ for pdf_path in pdf_files:
 # Output paths of all saved images
 all_image_paths
 
+#Block 4
 import pytesseract
 from PIL import Image
 from googletrans import Translator
 from langdetect import detect
+import spacy
 import re
 import json
+import logging
+from typing import Dict, Tuple, Optional, List
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 
-# List of image paths
-all_image_paths = [
-    '24000001.pdf_page_1.jpg',
-    '24000002.pdf_page_1.jpg',
-    '24000003.pdf_page_1.jpg',
-    '24000004.pdf_page_1.jpg',
-    '24000005.pdf_page_1.jpg',
-    '24000006.pdf_page_1.jpg',
-    '24000006.pdf_page_2.jpg',
-    '24000007.pdf_page_1.jpg',
-    '24000007.pdf_page_2.jpg',
-    '24000007.pdf_page_3.jpg',
-    '24000007.pdf_page_4.jpg',
-    '24000008.pdf_page_1.jpg',
-    '24000009.pdf_page_1.jpg',
-    '24000010.pdf_page_1.jpg'
-]
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-# Initialize Google Translate API translator
-translator = Translator()
+@dataclass
+class DocumentInfo:
+    image_path: str
+    company_name: Optional[str]
+    company_identifier: Optional[str]
+    document_purpose: str
+    purpose_details: Dict
 
-# Function to extract company name
-def extract_company_name(text):
-    match = re.search(r"Nom\s+\(en entier\):\s*([\w\s]+)", text)
-    return match.group(1).strip() if match else None
-
-# Function to extract company identifier
-def extract_company_identifier(text):
-    match = re.search(r"N° d'entreprise\s*:\s*([\d\s]+)", text)
-    return match.group(1).strip() if match else None
-
-# Function to extract document purpose and key terms
-def extract_document_purpose(text):
-    key_terms = ['Nomination', 'Démission', 'Changement', 'Assemblée']
-    purposes = [term for term in key_terms if term.lower() in text.lower()]
-    return ", ".join(purposes)
-
-# Function to translate text to English if necessary
-def translate_to_english(text, detected_language):
-    if detected_language != 'en' and text:
-        translated = translator.translate(text, src=detected_language, dest='en')
-        return translated.text
-    return text
-
-# Process each image in the list
-for image_path in all_image_paths:
-    print(f"Processing {image_path}...")
-    
-    # Open the image
-    image = Image.open(image_path)
-    
-    # Extract text using OCR
-    text = pytesseract.image_to_string(image)
-    
-    # Detect the language of the extracted text
-    detected_language = detect(text)
-    print(f"Detected language: {detected_language}")
-
-    # Extract information from the translated text
-    company_name = extract_company_name(text)
-    company_identifier = extract_company_identifier(text)
-    document_purpose = extract_document_purpose(text)
-
-    # Translate the extracted information into English if necessary
-    company_name = translate_to_english(company_name, detected_language)
-    company_identifier = translate_to_english(company_identifier, detected_language)
-    document_purpose = translate_to_english(document_purpose, detected_language)
-
-    # Structure the extracted data into a JSON format
-    extracted_info = {
-        "Image Path": image_path,
-        "Company Name": company_name,
-        "Company Identifier": company_identifier,
-        "Document Purpose": document_purpose
+class DocumentExtractor:
+    # Regular expression patterns
+    PATTERNS = {
+        'company_id': r'(?i)(?:company\s+identifier|registration\s+number|company\s+number)\s*:?\s*([\d\s-]+)',
+        'position': r'(?i)position\s*:?\s*([\w\s,.-]+?)(?:\.|$|\n)',
+        'effective_date': r'(?i)(?:effective\s+date|date\s+of\s+(?:appointment|resignation))\s*:?\s*([\d\s\w,.-]+?)(?:\.|$|\n)',
+        'director_name': r'(?i)(?:director\s+name|name\s+of\s+director)\s*:?\s*([\w\s,.-]+?)(?:\.|$|\n)',
+        'address': r'(?i)(?:address|residential\s+address)\s*:?\s*([\w\s,.-]+?)(?:\.|$|\n)',
+        'nationality': r'(?i)nationality\s*:?\s*([\w\s]+?)(?:\.|$|\n)',
+        'birth_date': r'(?i)(?:date\s+of\s+birth|birth\s+date)\s*:?\s*([\d\s\w,.-]+?)(?:\.|$|\n)'
     }
+
+    PURPOSE_KEYWORDS = {
+        'appointment': ['appointment', 'new director', 'appointment of director'],
+        'resignation': ['resignation', 'cessation', 'stepping down'],
+        'change': ['change of', 'amendment', 'modification'],
+        'meeting': ['annual general meeting', 'extraordinary general meeting', 'board meeting'],
+        'share': ['share allotment', 'transfer of shares', 'share structure']
+    }
+
+    def __init__(self):
+        """Initialize the document extractor with necessary models and tools."""
+        try:
+            self.nlp = spacy.load('en_core_web_sm')
+        except OSError:
+            logger.error("Failed to load spaCy model. Please install it using: python -m spacy download en_core_web_sm")
+            raise
+
+        self.translator = Translator()
+
+    def extract_using_pattern(self, text: str, pattern: str) -> Optional[str]:
+        """Extract information using a regex pattern."""
+        match = re.search(pattern, text)
+        return match.group(1).strip() if match else None
+
+    def extract_company_name(self, text: str) -> Optional[str]:
+        """Extract company name using spaCy and additional rules."""
+        doc = self.nlp(text)
+        
+        # First try to find organization entities
+        org_entities = [ent.text for ent in doc.ents if ent.label_ == "ORG"]
+        
+        if org_entities:
+            # Prioritize organizations that appear after "Company Name:" or similar patterns
+            company_pattern = r'(?i)company\s+name\s*:\s*([\w\s]+)(?:\.|$|\n)'
+            explicit_company = self.extract_using_pattern(text, company_pattern)
+            
+            if explicit_company and explicit_company in org_entities:
+                return explicit_company
+            
+            return org_entities[0]  # Return the first organization found
+        
+        return None
+
+    def identify_document_purpose(self, text: str) -> Tuple[str, Dict]:
+        """Identify document purpose and extract relevant details."""
+        text_lower = text.lower()
+        purpose_details = {}
+        identified_purposes = []
+
+        # Check for each purpose type
+        for purpose_type, keywords in self.PURPOSE_KEYWORDS.items():
+            if any(keyword in text_lower for keyword in keywords):
+                identified_purposes.append(purpose_type)
+                purpose_details.update(self._extract_purpose_specific_details(text, purpose_type))
+
+        return (
+            ", ".join(identified_purposes) if identified_purposes else "Purpose not identified",
+            purpose_details
+        )
+
+    def _extract_purpose_specific_details(self, text: str, purpose_type: str) -> Dict:
+        """Extract details specific to the document purpose."""
+        details = {'Type': purpose_type.capitalize()}
+
+        if purpose_type == 'appointment':
+            director_name = self.extract_using_pattern(text, self.PATTERNS['director_name'])
+            position = self.extract_using_pattern(text, self.PATTERNS['position'])
+            effective_date = self.extract_using_pattern(text, self.PATTERNS['effective_date'])
+            nationality = self.extract_using_pattern(text, self.PATTERNS['nationality'])
+            address = self.extract_using_pattern(text, self.PATTERNS['address'])
+
+            if director_name:
+                details['Director Name'] = director_name
+            if position:
+                details['Position'] = position
+            if effective_date:
+                details['Effective Date'] = effective_date
+            if nationality:
+                details['Nationality'] = nationality
+            if address:
+                details['Address'] = address
+
+        elif purpose_type == 'resignation':
+            director_name = self.extract_using_pattern(text, self.PATTERNS['director_name'])
+            effective_date = self.extract_using_pattern(text, self.PATTERNS['effective_date'])
+            
+            if director_name:
+                details['Director Name'] = director_name
+            if effective_date:
+                details['Effective Date'] = effective_date
+
+        return details
+
+    def process_document(self, image_path: str) -> DocumentInfo:
+        """Process a single document and extract information."""
+        try:
+            # Open and process image
+            image = Image.open(image_path)
+            text = pytesseract.image_to_string(image)
+
+            # Detect and translate if necessary
+            try:
+                detected_language = detect(text)
+                if detected_language != 'en':
+                    text = self.translator.translate(text, src=detected_language, dest='en').text
+            except Exception as e:
+                logger.warning(f"Language detection/translation failed: {e}")
+
+            # Extract information
+            company_name = self.extract_company_name(text)
+            company_identifier = self.extract_using_pattern(text, self.PATTERNS['company_id'])
+            document_purpose, purpose_details = self.identify_document_purpose(text)
+
+            return DocumentInfo(
+                image_path=image_path,
+                company_name=company_name,
+                company_identifier=company_identifier,
+                document_purpose=document_purpose,
+                purpose_details=purpose_details
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing document {image_path}: {e}")
+            return DocumentInfo(
+                image_path=image_path,
+                company_name=None,
+                company_identifier=None,
+                document_purpose="Error processing document",
+                purpose_details={"error": str(e)}
+            )
+
+def main():
+    # Create output directory for results
+    output_dir = Path("extracted_results")
+    output_dir.mkdir(exist_ok=True)
     
-    # Output the result in JSON format
-    json_output = json.dumps(extracted_info, ensure_ascii=False, indent=4)
-    print(json_output)
+    # Initialize extractor
+    extractor = DocumentExtractor()
+    
+    # Process all images
+    all_results = []
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    image_paths = [
+        '24000001.pdf_page_1.jpg',
+        '24000002.pdf_page_1.jpg',
+        '24000003.pdf_page_1.jpg',
+        '24000004.pdf_page_1.jpg',
+        '24000005.pdf_page_1.jpg',
+        '24000006.pdf_page_1.jpg',
+        '24000006.pdf_page_2.jpg',
+        '24000007.pdf_page_1.jpg',
+        '24000007.pdf_page_2.jpg',
+        '24000007.pdf_page_3.jpg',
+        '24000007.pdf_page_4.jpg',
+        '24000008.pdf_page_1.jpg',
+        '24000009.pdf_page_1.jpg',
+        '24000010.pdf_page_1.jpg'
+    ]
+
+    for image_path in image_paths:
+        logger.info(f"Processing {image_path}...")
+        result = extractor.process_document(image_path)
+        all_results.append(result.__dict__)
+
+    # Save results to JSON file
+    output_file = output_dir / f"extracted_info_{timestamp}.json"
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(all_results, f, ensure_ascii=False, indent=4)
+    
+    logger.info(f"Results saved to {output_file}")
+
+if __name__ == "__main__":
+    main()
