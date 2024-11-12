@@ -43,14 +43,6 @@ for pdf_path in pdf_files:
 # Output paths of all saved images
 all_image_paths
 
-
-
-from google.colab import files
-uploaded = files.upload()
-#creditsafe json
-
-
-
 import pytesseract
 from PIL import Image
 from googletrans import Translator
