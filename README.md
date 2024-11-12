@@ -11,7 +11,7 @@ Step 3:
 Run the 3rd block, convert all the pdfs into jpgs (as this is the format they are needed in for my program)
 
 Step 4:
-Run the 4th block, select 
+Run the 4th block, this will take some time to complete, but will try and output the required information from the images which were given.
 
 
 
