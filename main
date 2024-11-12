@@ -1,1 +1,139 @@
+#pip installs
+#!pip install googletrans==4.0.0-rc1
+#!pip install pytesseract
+#!sudo apt install tesseract-ocr
+#!pip install pytesseract
+#!pip install pdf2image Pillow
+#!pip install --upgrade google-cloud-vision
+#!apt-get install -y poppler-utils
+#!pip install langdetect
 
+
+from google.colab import files
+uploaded = files.upload()
+
+
+
+from pdf2image import convert_from_path
+from google.colab import files
+
+# List of PDF files you want to process
+pdf_files = ['24000001.pdf', '24000002.pdf', '24000003.pdf', '24000004.pdf', 
+             '24000005.pdf', '24000006.pdf', '24000007.pdf', '24000008.pdf',
+             '24000009.pdf', '24000010.pdf']
+
+# Initialize a list to store image paths for all PDFs
+all_image_paths = []
+
+# Loop through each PDF and convert pages to images
+for pdf_path in pdf_files:
+    # Convert the PDF to images (you can adjust the DPI if necessary)
+    pages = convert_from_path(pdf_path, 300)  # 300 DPI is good for OCR quality
+
+    # Save each page as an image
+    image_paths = []
+    for page_number, page in enumerate(pages):
+        image_path = f'{pdf_path}_page_{page_number + 1}.jpg'  # Unique name for each page
+        page.save(image_path, 'JPEG')
+        image_paths.append(image_path)
+    
+    # Add the paths of images for this PDF to the overall list
+    all_image_paths.extend(image_paths)
+
+# Output paths of all saved images
+all_image_paths
+
+
+
+from google.colab import files
+uploaded = files.upload()
+#creditsafe json
+
+
+
+import pytesseract
+from PIL import Image
+from googletrans import Translator
+from langdetect import detect
+import re
+import json
+
+# List of image paths
+all_image_paths = [
+    '24000001.pdf_page_1.jpg',
+    '24000002.pdf_page_1.jpg',
+    '24000003.pdf_page_1.jpg',
+    '24000004.pdf_page_1.jpg',
+    '24000005.pdf_page_1.jpg',
+    '24000006.pdf_page_1.jpg',
+    '24000006.pdf_page_2.jpg',
+    '24000007.pdf_page_1.jpg',
+    '24000007.pdf_page_2.jpg',
+    '24000007.pdf_page_3.jpg',
+    '24000007.pdf_page_4.jpg',
+    '24000008.pdf_page_1.jpg',
+    '24000009.pdf_page_1.jpg',
+    '24000010.pdf_page_1.jpg'
+]
+
+# Initialize Google Translate API translator
+translator = Translator()
+
+# Function to extract company name
+def extract_company_name(text):
+    match = re.search(r"Nom\s+\(en entier\):\s*([\w\s]+)", text)
+    return match.group(1).strip() if match else None
+
+# Function to extract company identifier
+def extract_company_identifier(text):
+    match = re.search(r"N° d'entreprise\s*:\s*([\d\s]+)", text)
+    return match.group(1).strip() if match else None
+
+# Function to extract document purpose and key terms
+def extract_document_purpose(text):
+    key_terms = ['Nomination', 'Démission', 'Changement', 'Assemblée']
+    purposes = [term for term in key_terms if term.lower() in text.lower()]
+    return ", ".join(purposes)
+
+# Function to translate text to English if necessary
+def translate_to_english(text, detected_language):
+    if detected_language != 'en' and text:
+        translated = translator.translate(text, src=detected_language, dest='en')
+        return translated.text
+    return text
+
+# Process each image in the list
+for image_path in all_image_paths:
+    print(f"Processing {image_path}...")
+    
+    # Open the image
+    image = Image.open(image_path)
+    
+    # Extract text using OCR
+    text = pytesseract.image_to_string(image)
+    
+    # Detect the language of the extracted text
+    detected_language = detect(text)
+    print(f"Detected language: {detected_language}")
+
+    # Extract information from the translated text
+    company_name = extract_company_name(text)
+    company_identifier = extract_company_identifier(text)
+    document_purpose = extract_document_purpose(text)
+
+    # Translate the extracted information into English if necessary
+    company_name = translate_to_english(company_name, detected_language)
+    company_identifier = translate_to_english(company_identifier, detected_language)
+    document_purpose = translate_to_english(document_purpose, detected_language)
+
+    # Structure the extracted data into a JSON format
+    extracted_info = {
+        "Image Path": image_path,
+        "Company Name": company_name,
+        "Company Identifier": company_identifier,
+        "Document Purpose": document_purpose
+    }
+    
+    # Output the result in JSON format
+    json_output = json.dumps(extracted_info, ensure_ascii=False, indent=4)
+    print(json_output)
