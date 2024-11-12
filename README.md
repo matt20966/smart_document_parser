@@ -1,4 +1,5 @@
 To build this solution I used google collab, I will be sepearting the code in the blocks I executed in google collab.
+To aid in the assitance of building this system I used claude AI and chatGpt as well as looking at various websites and adapting the code through trial and error for the natural language processing.
 
 Step 1:
 Run 1st block, installing necessary libaries.
